@@ -134,16 +134,16 @@ def linear(x: torch.Tensor, weight: torch.Tensor, bias: Optional[torch.Tensor] =
 
     Args:
         x (torch.Tensor): The input tensor.
-        weight (torch.Tensor): The weight tensor. It may be quantized and 
+        weight (torch.Tensor): The weight tensor. It may be quantized and
             requires dequantization for certain cases.
         bias (Optional[torch.Tensor]): The bias tensor to be added. Default is None.
 
     Returns:
-        torch.Tensor: The result of the linear transformation, which may involve 
+        torch.Tensor: The result of the linear transformation, which may involve
         quantization-aware computations depending on the input parameters.
 
     Notes:
-        - If `weight` is quantized (e.g., `element_size() == 1`), a dequantized version 
+        - If `weight` is quantized (e.g., `element_size() == 1`), a dequantized version
           is used for computation.
         - If `gemm_impl == "bf16"`, dequantization and a `bf16` GEMM operation are applied.
         - For other cases, the function applies quantization to `x` and uses `fp8_gemm` for computation.
@@ -445,7 +445,7 @@ class MLA(nn.Module):
         self.save_ckpt = False  # manually set to true externally
         self.ckpt_dir = "output_ckpt"  # need to different name for each layer
 
-    
+
     def forward(self, x: torch.Tensor, start_pos: int, freqs_cis: torch.Tensor, mask: Optional[torch.Tensor]):
         """
         Forward pass for the Multi-Headed Attention Layer (MLA).
@@ -481,7 +481,7 @@ class MLA(nn.Module):
             self.v_cache[:bsz, start_pos:end_pos] = v
             scores = torch.einsum("bshd,bthd->bsht", q, self.k_cache[:bsz, :end_pos]) * self.softmax_scale
         else:
-            wkv_b = self.wkv_b.weight if self.wkv_b.scale is None else weight_dequant(self.wkv_b.weight, self.wkv_b.scale, block_size) 
+            wkv_b = self.wkv_b.weight if self.wkv_b.scale is None else weight_dequant(self.wkv_b.weight, self.wkv_b.scale, block_size)
             wkv_b = wkv_b.view(self.n_local_heads, -1, self.kv_lora_rank)
             q_nope = torch.einsum("bshd,hdc->bshc", q_nope, wkv_b[:, :self.qk_nope_head_dim])
             self.kv_cache[:bsz, start_pos:end_pos] = self.kv_norm(kv)
@@ -491,9 +491,10 @@ class MLA(nn.Module):
             kv_cache_used = self.kv_cache[:bsz, :end_pos]
             pe_cache_used = self.pe_cache[:bsz, :end_pos]
 
+            # TODO(jz): can be merged to one fused BMM of "bsh(c+r),bt(c+r)->bsht"
             scores = (torch.einsum("bshc,btc->bsht", q_nope, kv_cache_used) +
                       torch.einsum("bshr,btr->bsht", q_pe, pe_cache_used)) * self.softmax_scale
-                      
+
         if mask is not None:
             scores += mask.unsqueeze(1)
         scores = scores.softmax(dim=-1, dtype=torch.float32).type_as(x)
@@ -515,13 +516,13 @@ class MLA(nn.Module):
                 )
                 if mask is not None:  # might be None at decode
                     record["mask"] = mask
-                    
+
                 output_name = f"{self.ckpt_dir}/mla_ckpt_{self.ckpt_iter:03}.safetensors"
                 print("saving ckpt to: ", output_name)
                 save_file(record, output_name)
                 self.ckpt_iter += 1
                 # record reference x before further transform
-            
+
             x = torch.einsum("bshc,hdc->bshd", x, wkv_b[:, -self.v_head_dim:])
         x = self.wo(x.flatten(2))
 
