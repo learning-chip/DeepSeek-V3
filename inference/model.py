@@ -480,7 +480,6 @@ class MLA(nn.Module):
             self.k_cache[:bsz, start_pos:end_pos] = k
             self.v_cache[:bsz, start_pos:end_pos] = v
             scores = torch.einsum("bshd,bthd->bsht", q, self.k_cache[:bsz, :end_pos]) * self.softmax_scale
-            prin
         else:
             wkv_b = self.wkv_b.weight if self.wkv_b.scale is None else weight_dequant(self.wkv_b.weight, self.wkv_b.scale, block_size) 
             wkv_b = wkv_b.view(self.n_local_heads, -1, self.kv_lora_rank)
