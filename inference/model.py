@@ -517,7 +517,7 @@ class MLA(nn.Module):
                 if mask is not None:  # might be None at decode
                     record["mask"] = mask
                     
-                output_name = f"{self.ckpt_dir}/mla_ckpt_{self.ckpt_iter}.safetensors"
+                output_name = f"{self.ckpt_dir}/mla_ckpt_{self.ckpt_iter:03}.safetensors"
                 print("saving ckpt to: ", output_name)
                 save_file(record, output_name)
                 self.ckpt_iter += 1
