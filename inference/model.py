@@ -8,7 +8,7 @@ import torch.nn.functional as F
 import torch.distributed as dist
 
 from kernel import act_quant, weight_dequant, fp8_gemm
-
+from safetensors.torch import save_file
 
 world_size = 1
 rank = 0
@@ -440,6 +440,12 @@ class MLA(nn.Module):
             self.register_buffer("kv_cache", torch.zeros(args.max_batch_size, args.max_seq_len, self.kv_lora_rank), persistent=False)
             self.register_buffer("pe_cache", torch.zeros(args.max_batch_size, args.max_seq_len, self.qk_rope_head_dim), persistent=False)
 
+        # NOTE(jz): to give name for each each checkpoint file
+        self.ckpt_iter = 0
+        self.save_ckpt = False  # manually set to true externally
+        self.ckpt_dir = "output_ckpt"  # need to different name for each layer
+
+    
     def forward(self, x: torch.Tensor, start_pos: int, freqs_cis: torch.Tensor, mask: Optional[torch.Tensor]):
         """
         Forward pass for the Multi-Headed Attention Layer (MLA).
@@ -474,23 +480,52 @@ class MLA(nn.Module):
             self.k_cache[:bsz, start_pos:end_pos] = k
             self.v_cache[:bsz, start_pos:end_pos] = v
             scores = torch.einsum("bshd,bthd->bsht", q, self.k_cache[:bsz, :end_pos]) * self.softmax_scale
+            prin
         else:
             wkv_b = self.wkv_b.weight if self.wkv_b.scale is None else weight_dequant(self.wkv_b.weight, self.wkv_b.scale, block_size) 
             wkv_b = wkv_b.view(self.n_local_heads, -1, self.kv_lora_rank)
             q_nope = torch.einsum("bshd,hdc->bshc", q_nope, wkv_b[:, :self.qk_nope_head_dim])
             self.kv_cache[:bsz, start_pos:end_pos] = self.kv_norm(kv)
             self.pe_cache[:bsz, start_pos:end_pos] = k_pe.squeeze(2)
-            scores = (torch.einsum("bshc,btc->bsht", q_nope, self.kv_cache[:bsz, :end_pos]) +
-                      torch.einsum("bshr,btr->bsht", q_pe, self.pe_cache[:bsz, :end_pos])) * self.softmax_scale
+
+            # NOTE(jz): checkpointing those intermediate values
+            kv_cache_used = self.kv_cache[:bsz, :end_pos]
+            pe_cache_used = self.pe_cache[:bsz, :end_pos]
+
+            scores = (torch.einsum("bshc,btc->bsht", q_nope, kv_cache_used) +
+                      torch.einsum("bshr,btr->bsht", q_pe, pe_cache_used)) * self.softmax_scale
+                      
         if mask is not None:
             scores += mask.unsqueeze(1)
         scores = scores.softmax(dim=-1, dtype=torch.float32).type_as(x)
         if attn_impl == "naive":
             x = torch.einsum("bsht,bthd->bshd", scores, self.v_cache[:bsz, :end_pos])
         else:
-            x = torch.einsum("bsht,btc->bshc", scores, self.kv_cache[:bsz, :end_pos])
+            x = torch.einsum("bsht,btc->bshc", scores, kv_cache_used)
+
+            # NOTE(jz): checkpoint MLA attention part input-output
+            if self.save_ckpt:
+                record = dict(
+                    q_nope = q_nope.contiguous(),
+                    q_pe = q_pe.contiguous(),
+                    kv_cache_used = kv_cache_used.contiguous(),
+                    pe_cache_used = pe_cache_used.contiguous(),
+                    scores = scores,
+                    softmax_scale = torch.tensor(self.softmax_scale),
+                    output_x = x
+                )
+                if mask is not None:  # might be None at decode
+                    record["mask"] = mask
+                    
+                output_name = f"{self.ckpt_dir}/mla_ckpt_{self.ckpt_iter}.safetensors"
+                print("saving ckpt to: ", output_name)
+                save_file(record, output_name)
+                self.ckpt_iter += 1
+                # record reference x before further transform
+            
             x = torch.einsum("bshc,hdc->bshd", x, wkv_b[:, -self.v_head_dim:])
         x = self.wo(x.flatten(2))
+
         return x
 
 
