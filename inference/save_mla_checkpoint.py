@@ -71,7 +71,7 @@ def init_and_load_model(config_path, ckpt_path, device="cuda", max_batch_size=8)
 
 def main(
     output_dir="mla_ckpts",
-    max_new_tokens=500,
+    max_new_tokens=100,
     temperature=0.2,
 ):
 
