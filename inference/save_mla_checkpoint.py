@@ -123,7 +123,7 @@ def main(
     _ = generate(
         model,
         prompt_tokens,
-        10, # max_new_tokens,
+        max_new_tokens,
         tokenizer.eos_token_id,
         temperature
     )
