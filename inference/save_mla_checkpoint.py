@@ -31,7 +31,6 @@ import os
 import json
 
 import torch
-import torch.distributed as dist
 
 from datasets import load_dataset
 from transformers import AutoTokenizer
@@ -51,10 +50,10 @@ dataset_list = [
     "Idavidrein/gpqa"
 ]
 
-def load_model(config_path, ckpt_path, device="cuda", max_batch_size=8):
+def init_and_load_model(config_path, ckpt_path, device="cuda", max_batch_size=8):
     tokenizer = AutoTokenizer.from_pretrained(ckpt_path)
 
-    with open(config) as f:
+    with open(config_path) as f:
         args = ModelArgs(**json.load(f))
 
     args.max_batch_size = max_batch_size  # KV cache pre-allocation
@@ -78,19 +77,25 @@ def main(
 
     ckpt_path = "/home/DeepSeek-V2-Lite-Chat_converted"
     config_path = "./configs/config_16B.json"
-    args, model, tokenizer = load_model(config_path, ckpt_path)
+    args, model, tokenizer = init_and_load_model(config_path, ckpt_path)
 
     # TODO: loop over entire dataset
     ds = load_dataset(dataset_list[0])
-    prompts = ds["problem"][0:args.max_batch_size]
-    print("prompts: ", prompts)
+    prompts = ds["test"]["problem"][0:args.max_batch_size]
+    print("=== prompts: ===")
+    for prompt in prompts:
+        print(prompt)
+        print("-"*10)
 
     prompt_tokens = [
         tokenizer.apply_chat_template(
             [{"role": "user", "content": prompt}], add_generation_prompt=True)
             for prompt in prompts
         ]
-    print("prompt_tokens.shape: ", prompt_tokens.shape)
+
+    print("=== prompt_tokens length: ===")
+    for prompt_token in prompt_tokens:
+        print(len(prompt_token))
 
     # warm-up run and sanity check
     torch.manual_seed(0)
