@@ -50,13 +50,20 @@ dataset_list = [
     "Idavidrein/gpqa"
 ]
 
-def init_and_load_model(config_path, ckpt_path, device="cuda", max_batch_size=8):
+def init_and_load_model(
+    config_path,
+    ckpt_path,
+    device="cuda",
+    max_batch_size=16,
+    max_seq_len=256
+):
     tokenizer = AutoTokenizer.from_pretrained(ckpt_path)
 
     with open(config_path) as f:
         args = ModelArgs(**json.load(f))
 
-    args.max_batch_size = max_batch_size  # KV cache pre-allocation
+    args.max_batch_size = max_batch_size  # for KV cache pre-allocation
+    args.max_seq_len = max_seq_len
 
     with torch.device(device):
         model = Transformer(args)
@@ -71,7 +78,7 @@ def init_and_load_model(config_path, ckpt_path, device="cuda", max_batch_size=8)
 
 def main(
     output_dir="mla_ckpts",
-    max_new_tokens=100,
+    max_new_tokens=50,
     temperature=0.2,
 ):
 
