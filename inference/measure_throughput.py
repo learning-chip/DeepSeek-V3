@@ -54,7 +54,8 @@ def init_and_load_model(
     device="cpu",
     max_batch_size=4,
     max_seq_len=256,
-    use_ipex=True
+    use_ipex=True,
+    backend="eager"
 ):
     tokenizer = AutoTokenizer.from_pretrained(ckpt_path)
 
@@ -75,15 +76,19 @@ def init_and_load_model(
 
     if use_ipex:
         model.eval()
-
-        # https://intel.github.io/intel-extension-for-pytorch/cpu/latest/tutorials/getting_started.html#quick-start
-        model = ipex.optimize(model, weights_prepack=False)
-        model = torch.compile(model, backend="ipex")
-        # https://intel.github.io/intel-extension-for-pytorch/cpu/2.6.0+cpu/tutorials/getting_started.html#llm-quick-start
-        # model = ipex.llm.optimize(model, dtype=torch.bfloat16, inplace=True, deployment_mode=True)
+        if backend == "dynamo":  # compile takes long time
+            # https://intel.github.io/intel-extension-for-pytorch/cpu/latest/tutorials/getting_started.html#quick-start
+            model = ipex.optimize(model, weights_prepack=False)
+            model = torch.compile(model, backend="ipex")
+        elif backend == "eager":
+            model = ipex.optimize(model, weights_prepack=False)
+        elif backend == "llm":
+            # https://intel.github.io/intel-extension-for-pytorch/cpu/2.6.0+cpu/tutorials/getting_started.html#llm-quick-start
+            model = ipex.llm.optimize(model, dtype=torch.bfloat16, inplace=True, deployment_mode=True)
+        else:
+            raise ValueError
 
     return args, model, tokenizer
-
 
 def main(
     max_new_tokens=100,
