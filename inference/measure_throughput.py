@@ -48,7 +48,7 @@ def init_and_load_model(
 
 
 def main(
-    max_new_tokens=20,
+    max_new_tokens=100,
     temperature=0.2,
     sample_offset=24
 ):
