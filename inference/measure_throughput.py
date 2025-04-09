@@ -1,3 +1,30 @@
+"""
+
+To launch:
+    export OMP_NUM_THREADS=8  # set to physical cores
+    export OMP_PROC_BIND=CLOSE
+    export OMP_SCHEDULE=STATIC
+    numactl --membind 1 -C 0-7 python ./measure_throughput.py
+
+See more:
+- https://intel.github.io/intel-extension-for-pytorch/cpu/latest/tutorials/performance_tuning/tuning_guide.html#numactl
+- https://intel.github.io/intel-extension-for-pytorch/cpu/latest/tutorials/performance_tuning/tuning_guide.html#openmp
+- https://github.com/intel/intel-extension-for-pytorch/blob/release/2.6/examples/cpu/llm/inference/ipex_llm_optimizations_inference_single_instance.ipynb
+
+To prepare weights:
+    # on host
+    curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | sudo bash
+    sudo apt install git-lfs
+    git lfs install
+    git clone https://huggingface.co/deepseek-ai/DeepSeek-V2-Lite-Chat
+
+    # inside container
+    python ./convert.py \
+        --hf-ckpt-path /mount_home/DeepSeek-V2-Lite-Chat \
+        --save-path /mount_home/DeepSeek-V2-Lite-Chat_converted \
+        --n-experts 64 --model-parallel 1
+"""
+
 import os
 import json
 
@@ -19,7 +46,7 @@ from generate import sample, generate
 from timeit import default_timer as timer
 
 torch.set_default_dtype(torch.bfloat16)
-torch.set_num_threads(8)  # NOTE: remember to change to available cores
+# torch.set_num_threads(8)  # NOTE: relies on `OMP_NUM_THREADS` env variable
 
 def init_and_load_model(
     config_path,
