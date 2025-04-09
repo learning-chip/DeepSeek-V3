@@ -2,6 +2,12 @@ import os
 import json
 
 import torch
+# "It is highly recommended to import intel_extension_for_pytorch right after import torch, prior to importing other packages."
+# https://intel.github.io/intel-extension-for-pytorch/cpu/2.6.0+cpu/tutorials/getting_started.html
+try:
+    import intel_extension_for_pytorch as ipex
+except:
+    pass
 
 from datasets import load_dataset
 from transformers import AutoTokenizer
@@ -41,8 +47,14 @@ def init_and_load_model(
     )
 
     if use_ipex:
-        import intel_extension_for_pytorch as ipex
-        model = ipex.optimize(model)
+        # https://intel.github.io/intel-extension-for-pytorch/cpu/2.6.0+cpu/tutorials/getting_started.html#llm-quick-start
+        model.eval()
+        model = ipex.llm.optimize(
+            model,
+            dtype=torch.bfloat16,
+            inplace=True,
+            deployment_mode=True,
+        )
 
     return args, model, tokenizer
 
