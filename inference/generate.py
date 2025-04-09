@@ -33,7 +33,8 @@ def generate(
     prompt_tokens: List[List[int]],
     max_new_tokens: int,
     eos_id: int,
-    temperature: float = 1.0
+    temperature: float = 1.0,
+    device: str = "cpu"
 ) -> List[List[int]]:
     """
     Generates new tokens based on the given prompt tokens using the specified model.
@@ -51,11 +52,11 @@ def generate(
     prompt_lens = [len(t) for t in prompt_tokens]
     assert max(prompt_lens) <= model.max_seq_len, f"Prompt length exceeds model maximum sequence length (max_seq_len={model.max_seq_len})"
     total_len = min(model.max_seq_len, max_new_tokens + max(prompt_lens))
-    tokens = torch.full((len(prompt_tokens), total_len), -1, dtype=torch.long, device="cuda")
+    tokens = torch.full((len(prompt_tokens), total_len), -1, dtype=torch.long, device=device)
     for i, t in enumerate(prompt_tokens):
-        tokens[i, :len(t)] = torch.tensor(t, dtype=torch.long, device="cuda")
+        tokens[i, :len(t)] = torch.tensor(t, dtype=torch.long, device=device)
     prev_pos = 0
-    finished = torch.tensor([False] * len(prompt_tokens), device="cuda")
+    finished = torch.tensor([False] * len(prompt_tokens), device=device)
     prompt_mask = tokens != -1
     for cur_pos in range(min(prompt_lens), total_len):
         logits = model.forward(tokens[:, prev_pos:cur_pos], prev_pos)
@@ -85,6 +86,7 @@ def main(
     interactive: bool = True,
     max_new_tokens: int = 100,
     temperature: float = 1.0,
+    device: str = "cpu"
 ) -> None:
     """
     Main function to load the model and perform interactive or batch text generation.
@@ -112,7 +114,7 @@ def main(
     with open(config) as f:
         args = ModelArgs(**json.load(f))
     print(args)
-    with torch.device("cuda"):
+    with torch.device(device):
         model = Transformer(args)
     tokenizer = AutoTokenizer.from_pretrained(ckpt_path)
     tokenizer.decode(generate(model, [tokenizer.encode("DeepSeek")], 2, -1, 1.)[0])
