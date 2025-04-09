@@ -4,7 +4,7 @@ To launch:
     export OMP_NUM_THREADS=8  # set to physical cores
     export OMP_PROC_BIND=CLOSE
     export OMP_SCHEDULE=STATIC
-    numactl --membind 1 -C 0-7 python ./measure_throughput.py
+    numactl --membind 0 -C 0-7 python ./measure_throughput.py
 
 See more:
 - https://intel.github.io/intel-extension-for-pytorch/cpu/latest/tutorials/performance_tuning/tuning_guide.html#numactl
