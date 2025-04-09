@@ -80,6 +80,7 @@ def main(
     output_dir="mla_ckpts",
     max_new_tokens=50,
     temperature=0.2,
+    sample_offset=24
 ):
 
     ckpt_path = "/home/DeepSeek-V2-Lite-Chat_converted"
@@ -88,7 +89,7 @@ def main(
 
     # TODO: loop over entire dataset
     ds = load_dataset(dataset_list[0])
-    prompts = ds["test"]["problem"][0:args.max_batch_size]
+    prompts = ds["test"]["problem"][sample_offset:sample_offset+args.max_batch_size]
     print("=== prompts: ===")
     for prompt in prompts:
         print(prompt)
