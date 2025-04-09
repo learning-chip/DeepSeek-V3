@@ -86,8 +86,16 @@ def main(
     for prompt_token in prompt_tokens:
         print(len(prompt_token))
 
-    torch.manual_seed(0)
+    # warm-up
+    generate(
+        model,
+        prompt_tokens,
+        3,  # max_new_tokens
+        tokenizer.eos_token_id,
+        temperature
+    )
 
+    torch.manual_seed(0)
     start_time = timer()
     completion_tokens = generate(
         model,
