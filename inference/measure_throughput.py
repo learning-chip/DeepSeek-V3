@@ -74,14 +74,13 @@ def init_and_load_model(
     )
 
     if use_ipex:
-        # https://intel.github.io/intel-extension-for-pytorch/cpu/2.6.0+cpu/tutorials/getting_started.html#llm-quick-start
         model.eval()
-        model = ipex.llm.optimize(
-            model,
-            dtype=torch.bfloat16,
-            inplace=True,
-            deployment_mode=True,
-        )
+
+        # https://intel.github.io/intel-extension-for-pytorch/cpu/latest/tutorials/getting_started.html#quick-start
+        model = ipex.optimize(model, weights_prepack=False)
+        model = torch.compile(model, backend="ipex")
+        # https://intel.github.io/intel-extension-for-pytorch/cpu/2.6.0+cpu/tutorials/getting_started.html#llm-quick-start
+        # model = ipex.llm.optimize(model, dtype=torch.bfloat16, inplace=True, deployment_mode=True)
 
     return args, model, tokenizer
 
