@@ -81,11 +81,11 @@ def main(
     end_time = timer()
 
     time_taken = end_time - start_time
-    num_output_tokens = sum(sum(output_sample) for output_sample in completion_tokens)
+    num_output_tokens = sum(len(output_sample) for output_sample in completion_tokens)
 
     print("num_output_tokens: ", num_output_tokens)
     print("time_taken (sec): ", time_taken)
-    print("throughput: ", num_output_tokens / time_taken)  
+    print("throughput (token/sec): ", num_output_tokens / time_taken)  
     # NOTE: here includes prefill time, but not counting prefill tokens
 
 if __name__ == "__main__":
