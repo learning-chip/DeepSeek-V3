@@ -107,7 +107,8 @@ def main(
     global print
     if rank != 0:
         print = lambda *_, **__: None
-    torch.cuda.set_device(local_rank)
+    if "cuda" in device:
+        torch.cuda.set_device(local_rank)
     torch.set_default_dtype(torch.bfloat16)
     torch.set_num_threads(8)
     torch.manual_seed(965)
