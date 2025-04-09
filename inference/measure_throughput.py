@@ -13,14 +13,15 @@ from generate import sample, generate
 from timeit import default_timer as timer
 
 torch.set_default_dtype(torch.bfloat16)
-torch.set_num_threads(8)
+torch.set_num_threads(8)  # NOTE: remember to change to available cores
 
 def init_and_load_model(
     config_path,
     ckpt_path,
     device="cpu",
     max_batch_size=4,
-    max_seq_len=256
+    max_seq_len=256,
+    use_ipex=True
 ):
     tokenizer = AutoTokenizer.from_pretrained(ckpt_path)
 
@@ -38,6 +39,11 @@ def init_and_load_model(
         model,
         os.path.join(ckpt_path, f"model{rank}-mp{world_size}.safetensors")
     )
+
+    if use_ipex:
+        import intel_extension_for_pytorch as ipex
+        model = ipex.optimize(model)
+
     return args, model, tokenizer
 
 
