@@ -5,14 +5,17 @@ To launch:
     export OMP_PROC_BIND=CLOSE
     export OMP_SCHEDULE=STATIC
 
-    mkdir -p logs
+Scaling test:
+    export OMP_PROC_BIND=SPREAD  # faster than CLOSE for large core counts
+    LOG_DIR=logs_bs1_zendnn
+    mkdir -p $LOG_DIR
     for CORE in 1 2 4 8 16 32 64 96 192; do
         echo =================
         echo using $CORE cores
         export OMP_NUM_THREADS=$CORE
         CORE_MINUS_ONE=$((CORE - 1))
         # echo $CORE_MINUS_ONE
-        numactl --membind 0 -C 0-$CORE_MINUS_ONE python ./measure_throughput.py | tee logs/throughput_core=${CORE}.log
+        numactl --membind 0 -C 0-$CORE_MINUS_ONE python ./measure_throughput.py | tee $LOG_DIR/throughput_core=${CORE}.log
     done
 
 See more:
@@ -34,16 +37,20 @@ To prepare weights:
         --n-experts 64 --model-parallel 1
 """
 
+cpu_type = "amd" # "intel", "general"
+
 import os
 import json
 
 import torch
-# "It is highly recommended to import intel_extension_for_pytorch right after import torch, prior to importing other packages."
-# https://intel.github.io/intel-extension-for-pytorch/cpu/2.6.0+cpu/tutorials/getting_started.html
-try:
+
+if cpu_type == "intel":
+    # "It is highly recommended to import intel_extension_for_pytorch right after import torch, prior to importing other packages."
+    # https://intel.github.io/intel-extension-for-pytorch/cpu/2.6.0+cpu/tutorials/getting_started.html
     import intel_extension_for_pytorch as ipex
-except:
-    pass
+elif cpu_type == "amd":
+    # https://github.com/amd/ZenDNN-pytorch-plugin
+    import zentorch
 
 from datasets import load_dataset
 from transformers import AutoTokenizer
@@ -61,10 +68,11 @@ def init_and_load_model(
     config_path,
     ckpt_path,
     device="cpu",
-    max_batch_size=4,
+    max_batch_size=1,
     max_seq_len=256,
-    use_ipex=False,
-    backend="eager"
+    use_ipex=(cpu_type == "intel"),
+    backend="eager",
+    use_zendnn=(cpu_type == "amd")
 ):
     tokenizer = AutoTokenizer.from_pretrained(ckpt_path)
 
@@ -96,6 +104,10 @@ def init_and_load_model(
             model = ipex.llm.optimize(model, dtype=torch.bfloat16, inplace=True, deployment_mode=True)
         else:
             raise ValueError
+
+    if use_zendnn:
+        model.eval()
+        model = torch.compile(model, backend='zentorch')
 
     return args, model, tokenizer
 
@@ -151,7 +163,7 @@ def main(
 
     print("num_output_tokens: ", num_output_tokens)
     print("time_taken (sec): ", time_taken)
-    print("throughput (token/sec): ", num_output_tokens / time_taken)  
+    print("throughput (token/sec): ", num_output_tokens / time_taken)
     # NOTE: here includes prefill time, but not counting prefill tokens
 
 if __name__ == "__main__":
