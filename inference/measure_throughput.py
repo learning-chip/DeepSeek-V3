@@ -54,7 +54,7 @@ def init_and_load_model(
     device="cpu",
     max_batch_size=4,
     max_seq_len=256,
-    use_ipex=True,
+    use_ipex=False,
     backend="eager"
 ):
     tokenizer = AutoTokenizer.from_pretrained(ckpt_path)
