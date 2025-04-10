@@ -4,7 +4,16 @@ To launch:
     export OMP_NUM_THREADS=8  # set to physical cores
     export OMP_PROC_BIND=CLOSE
     export OMP_SCHEDULE=STATIC
-    numactl --membind 0 -C 0-7 python ./measure_throughput.py
+
+    mkdir -p logs
+    for CORE in 1 2 4 8 16 32 64 96 192; do
+        echo =================
+        echo using $CORE cores
+        export OMP_NUM_THREADS=$CORE
+        CORE_MINUS_ONE=$((CORE - 1))
+        # echo $CORE_MINUS_ONE
+        numactl --membind 0 -C 0-$CORE_MINUS_ONE python ./measure_throughput.py | tee logs/throughput_core=${CORE}.log
+    done
 
 See more:
 - https://intel.github.io/intel-extension-for-pytorch/cpu/latest/tutorials/performance_tuning/tuning_guide.html#numactl
@@ -20,8 +29,8 @@ To prepare weights:
 
     # inside container
     python ./convert.py \
-        --hf-ckpt-path /mount_home/DeepSeek-V2-Lite-Chat \
-        --save-path /mount_home/DeepSeek-V2-Lite-Chat_converted \
+        --hf-ckpt-path /model_weights/DeepSeek-V2-Lite-Chat \
+        --save-path /model_weights/DeepSeek-V2-Lite-Chat_converted \
         --n-experts 64 --model-parallel 1
 """
 
