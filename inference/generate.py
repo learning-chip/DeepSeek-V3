@@ -102,9 +102,12 @@ def main(
     local_rank = int(os.getenv("LOCAL_RANK", "0"))
     if world_size > 1:
         dist.init_process_group("nccl")
-    global print
-    if rank != 0:
-        print = lambda *_, **__: None
+
+    # NOTE: do not disable print for non-rank 0 processes
+    # global print
+    # if rank != 0:
+    #     print = lambda *_, **__: None
+
     torch.cuda.set_device(local_rank)
     torch.set_default_dtype(torch.bfloat16)
     torch.set_num_threads(8)
@@ -150,9 +153,18 @@ def main(
         completion_tokens = generate(model, prompt_tokens, max_new_tokens, tokenizer.eos_token_id, temperature)
         completions = tokenizer.batch_decode(completion_tokens, skip_special_tokens=True)
         for prompt, completion in zip(prompts, completions):
-            print("Prompt:", prompt)
-            print("Completion:", completion)
-            print()
+            print(
+                f"[Rank {local_rank}] Prompt:", prompt, "\n",
+                f"[Rank {local_rank}] Completion:", completion, "\n"
+            )
+
+    print(
+        f"[Rank {local_rank}] CUDA Memory Status: "
+        f"Allocated: {torch.cuda.memory_allocated() / 1024 ** 3:.2f} GB, "
+        f"Reserved: {torch.cuda.memory_reserved() / 1024 ** 3:.2f} GB, "
+        f"Max Allocated: {torch.cuda.max_memory_allocated() / 1024 ** 3:.2f} GB, "
+        f"Max Reserved: {torch.cuda.max_memory_reserved() / 1024 ** 3:.2f} GB"
+    )
 
     if world_size > 1:
         dist.destroy_process_group()
