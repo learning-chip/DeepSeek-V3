@@ -775,7 +775,7 @@ class Transformer(nn.Module):
             start_pos (int, optional): Starting position in the sequence for rotary embeddings. Defaults to 0.
 
         Returns:
-            torch.Tensor: Logits tensor of shape (batch_size, vocab_size).
+            torch.Tensor: Logits tensor of shape (batch_size, seq_len, vocab_size).
         """
         seqlen = tokens.size(1)
         h = self.embed(tokens)
@@ -785,7 +785,9 @@ class Transformer(nn.Module):
             mask = torch.full((seqlen, seqlen), float("-inf"), device=tokens.device).triu_(1)
         for layer in self.layers:
             h = layer(h, start_pos, freqs_cis, mask)
-        h = self.norm(h)[:, -1]
+        # h = self.norm(h)[:, -1]
+        h = self.norm(h)  # NOTE(jzhuang): keep all logits for lm-eval
+        # TODO: only keep continuation logits to reduce matmul size inside language head
         logits = self.head(h)
         if world_size > 1:
             all_logits = [torch.empty_like(logits) for _ in range(world_size)]
