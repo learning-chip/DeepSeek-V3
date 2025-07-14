@@ -10,7 +10,7 @@ python eval_demo.py --ckpt-path $MODEL_PATH --config $MODEL_CONFIG \
     | tee dsv2_minimumeval_mmlusubset.log
 
 python eval_demo.py --ckpt-path $MODEL_PATH --config $MODEL_CONFIG \
-    --tasks mmlu
+    --tasks mmlu | tee dsv2_minimumeval_mmlu.log
 """
 
 import os
@@ -62,7 +62,7 @@ def main(
         tasks=tasks,
         task_manager=task_manager
     )
-    return eval_results
+    print(make_table(eval_results))
 
 
 if __name__ == "__main__":
