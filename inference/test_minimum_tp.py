@@ -50,6 +50,7 @@ def main(
 
     batch = 1
     num_tokens = 10  # NOTE: too large size leads to `Cuda failure 700 'an illegal memory access was encountered'` on BZ GPU
+    # On a correctly-configured GPU server like vast.ai, very large inputs still work
     tokens = torch.randint(0, args.vocab_size, size=(batch, num_tokens), dtype=torch.int64).to("cuda")
     output = model.forward(tokens)
     print(f"[rank {rank}] output.shape = {output.shape}")
