@@ -785,13 +785,15 @@ class Transformer(nn.Module):
             mask = torch.full((seqlen, seqlen), float("-inf"), device=tokens.device).triu_(1)
         for layer in self.layers:
             h = layer(h, start_pos, freqs_cis, mask)
-        # h = self.norm(h)[:, -1]
-        h = self.norm(h)  # NOTE(jzhuang): keep all logits for lm-eval
-        # TODO: only keep continuation logits to reduce matmul size inside language head
+        h = self.norm(h)[:, -1]  # original code only takes last token position
+        # h = self.norm(h)  # NOTE(jzhuang): keep all logits for lm-eval
+        # TODO: this breaks original `generate.py` logic, need to have make if branch for generate case
+        # TODO: for lm-eval only keep continuation logits to reduce matmul size inside language head
         logits = self.head(h)
+
         if world_size > 1:
             all_logits = [torch.empty_like(logits) for _ in range(world_size)]
-            dist.all_gather(all_logits, logits)
+            dist.all_gather(all_logits, logits)  # TODO: only need to gather to rank0 for lm-eval API
             logits = torch.cat(all_logits, dim=-1)
         return logits
 
