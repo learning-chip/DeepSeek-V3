@@ -122,7 +122,6 @@ class ParallelEmbedding(nn.Module):
         y = F.embedding(x, self.weight)
         if world_size > 1:
             y[mask] = 0
-            print(f"[rank {rank}] y.device {y.device}, y.shape {y.shape}")
             dist.all_reduce(y)
         return y
 
