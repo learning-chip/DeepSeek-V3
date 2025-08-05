@@ -50,6 +50,7 @@ class MOEFeedForward(nn.Module):
         expert_outs = self.cond_ffn(x, expert_indices)
         y = torch.einsum('tai,ta -> ti', expert_outs, expert_weights)
         z = self.shared_experts(x)
+        # TODO: need allreduce for multi-device case
         return (y + z).view(shape)
 
 
