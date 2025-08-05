@@ -134,16 +134,16 @@ def linear(x: torch.Tensor, weight: torch.Tensor, bias: Optional[torch.Tensor] =
 
     Args:
         x (torch.Tensor): The input tensor.
-        weight (torch.Tensor): The weight tensor. It may be quantized and 
+        weight (torch.Tensor): The weight tensor. It may be quantized and
             requires dequantization for certain cases.
         bias (Optional[torch.Tensor]): The bias tensor to be added. Default is None.
 
     Returns:
-        torch.Tensor: The result of the linear transformation, which may involve 
+        torch.Tensor: The result of the linear transformation, which may involve
         quantization-aware computations depending on the input parameters.
 
     Notes:
-        - If `weight` is quantized (e.g., `element_size() == 1`), a dequantized version 
+        - If `weight` is quantized (e.g., `element_size() == 1`), a dequantized version
           is used for computation.
         - If `gemm_impl == "bf16"`, dequantization and a `bf16` GEMM operation are applied.
         - For other cases, the function applies quantization to `x` and uses `fp8_gemm` for computation.
@@ -475,7 +475,7 @@ class MLA(nn.Module):
             self.v_cache[:bsz, start_pos:end_pos] = v
             scores = torch.einsum("bshd,bthd->bsht", q, self.k_cache[:bsz, :end_pos]) * self.softmax_scale
         else:
-            wkv_b = self.wkv_b.weight if self.wkv_b.scale is None else weight_dequant(self.wkv_b.weight, self.wkv_b.scale, block_size) 
+            wkv_b = self.wkv_b.weight if self.wkv_b.scale is None else weight_dequant(self.wkv_b.weight, self.wkv_b.scale, block_size)
             wkv_b = wkv_b.view(self.n_local_heads, -1, self.kv_lora_rank)
             q_nope = torch.einsum("bshd,hdc->bshc", q_nope, wkv_b[:, :self.qk_nope_head_dim])
             self.kv_cache[:bsz, start_pos:end_pos] = self.kv_norm(kv)
@@ -765,6 +765,20 @@ class Transformer(nn.Module):
         self.head = ColumnParallelLinear(args.dim, args.vocab_size, dtype=torch.get_default_dtype())
         self.register_buffer("freqs_cis", precompute_freqs_cis(args), persistent=False)
 
+    def compute_all_layers(self, tokens, start_pos, freqs_cis, mask):
+        """
+        Put all static computations inside this function for torch.compile
+        """
+        h = self.embed(tokens)
+        for layer in self.layers:
+            h = layer(h, start_pos, freqs_cis, mask)
+        # h = self.norm(h)[:, -1]  # original code only takes last token position
+        h = self.norm(h)  # NOTE(jzhuang): keep all logits for lm-eval
+        # TODO: this breaks original `generate.py` logic, need to add if branch for generate case
+        # TODO: for lm-eval only keep continuation logits to reduce matmul size inside language head
+        logits = self.head(h)
+        return logits
+
     @torch.inference_mode()
     def forward(self, tokens: torch.Tensor, start_pos: int = 0):
         """
@@ -778,18 +792,13 @@ class Transformer(nn.Module):
             torch.Tensor: Logits tensor of shape (batch_size, seq_len, vocab_size).
         """
         seqlen = tokens.size(1)
-        h = self.embed(tokens)
         freqs_cis = self.freqs_cis[start_pos:start_pos+seqlen]
         mask = None
         if seqlen > 1:
             mask = torch.full((seqlen, seqlen), float("-inf"), device=tokens.device).triu_(1)
-        for layer in self.layers:
-            h = layer(h, start_pos, freqs_cis, mask)
-        # h = self.norm(h)[:, -1]  # original code only takes last token position
-        h = self.norm(h)  # NOTE(jzhuang): keep all logits for lm-eval
-        # TODO: this breaks original `generate.py` logic, need to add if branch for generate case
-        # TODO: for lm-eval only keep continuation logits to reduce matmul size inside language head
-        logits = self.head(h)
+
+        # NOTE: above dynamic computations are left out side of torch.compile
+        logits = self.compute_all_layers(tokens, start_pos, freqs_cis, mask)
 
         if world_size > 1:
             all_logits = [torch.empty_like(logits) for _ in range(world_size)]
