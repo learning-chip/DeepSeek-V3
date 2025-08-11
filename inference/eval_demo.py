@@ -4,7 +4,7 @@ Dependency
     # 0.4.9.1 has API changes: https://github.com/EleutherAI/lm-evaluation-harness/releases
 
 Usage
-    WEIGHT_DIR=/workspace/model_weights/  # server-specific
+    WEIGHT_DIR=/scratch/model_weights/  # server-specific
 
     MODEL_PATH_TP1=$WEIGHT_DIR/DeepSeek-V2-Lite-Chat_TP1
     MODEL_CONFIG=configs/config_16B.json
@@ -23,6 +23,10 @@ Usage
     python eval_demo.py --ckpt-path $MODEL_PATH_TP1 --config $MODEL_CONFIG \
         --tasks mmlu_high_school_computer_science mmlu_college_biology \
         --quantize | tee dsv2_minimumeval_mmlusubset_TP1_hqqw4a16.log
+
+    python eval_demo.py --ckpt-path $MODEL_PATH_TP1 --config $MODEL_CONFIG \
+        --tasks mmlu \
+        --quantize | tee dsv2_minimumeval_mmlu_TP1_hqqw4a16.log
 
 Multi-device runs (if get error, check standalone dist.all_reduce on the GPU server)
 
@@ -120,14 +124,18 @@ def main(args):
     tokenizer = AutoTokenizer.from_pretrained(ckpt_path)
 
     with open(config) as f:
-        args = ModelArgs(**json.load(f))
-    print(args)
+        model_args = ModelArgs(**json.load(f))
+
+    # reduce KV cache memory size
+    model_args.max_batch_size = 1
+    model_args.max_seq_len = 8192
+    print(model_args)
 
     if quantize:
         # NOTE: can also load to CPU and later quant on the fly to device, to reduce peak memory
         # but weight initialization on CPU is very slow
         with torch.device("cuda"):
-            model = Transformer(args)
+            model = Transformer(model_args)
 
         load_model(model, os.path.join(ckpt_path, f"model{rank}-mp{world_size}.safetensors"))
 
@@ -150,7 +158,7 @@ def main(args):
             # for batched inference (not used in eval here), need to adopt MARLIN backend
     else:
         with torch.device("cuda"):
-            model = Transformer(args)
+            model = Transformer(model_args)
 
         load_model(model, os.path.join(ckpt_path, f"model{rank}-mp{world_size}.safetensors"))
 
