@@ -19,6 +19,11 @@ Usage
     python eval_demo.py --ckpt-path $MODEL_PATH_TP1 --config $MODEL_CONFIG \
         --tasks mmlu | tee dsv2_minimumeval_mmlu_TP1.log
 
+    # quantize eval
+    python eval_demo.py --ckpt-path $MODEL_PATH_TP1 --config $MODEL_CONFIG \
+        --tasks mmlu_high_school_computer_science mmlu_college_biology \
+        --quantize | tee dsv2_minimumeval_mmlusubset_TP1_hqqw4a16.log
+
 Multi-device runs (if get error, check standalone dist.all_reduce on the GPU server)
 
     MODEL_PATH_TP2=$WEIGHT_DIR/DeepSeek-V2-Lite-Chat_TP2
@@ -32,6 +37,11 @@ Multi-device runs (if get error, check standalone dist.all_reduce on the GPU ser
         eval_demo.py --ckpt-path $MODEL_PATH_TP2 --config $MODEL_CONFIG \
         --tasks mmlu_high_school_computer_science mmlu_college_biology \
         | tee dsv2_minimumeval_mmlusubset_TP2.log
+
+    torchrun --standalone --nnodes 1 --nproc-per-node 2 \
+        eval_demo.py --ckpt-path $MODEL_PATH_TP2 --config $MODEL_CONFIG \
+        --tasks mmlu_high_school_computer_science mmlu_college_biology \
+        --quantize | tee dsv2_minimumeval_mmlusubset_TP2_hqqw4a16.log
 
 Weight preprocessing same as original generate.py
 
@@ -76,11 +86,18 @@ def report_memory(local_rank):
     )
 
 
-def main(
-    ckpt_path: str,
-    config: str,
-    tasks: list = ["mmlu"]
-) -> None:
+def main(args):
+    ckpt_path = args.ckpt_path
+    config = args.config
+    tasks = args.tasks
+    quantize = args.quantize
+
+    if quantize:
+        # TODO: use nanohqq for NPU backend
+        from hqq.models.hf.base import AutoHQQHFModel
+        from nanohqq.hqqlinear import BaseQuantizeConfig
+        from hqq.utils.patching import prepare_for_inference
+
     # Configure for TP (`torchrun``), also works for TP=1 with simple `python` launch
     world_size = int(os.getenv("WORLD_SIZE", "1"))
     rank = int(os.getenv("RANK", "0"))
@@ -93,14 +110,35 @@ def main(
     torch.set_num_threads(8)
     torch.manual_seed(965)
 
+    tokenizer = AutoTokenizer.from_pretrained(ckpt_path)
+
     with open(config) as f:
         args = ModelArgs(**json.load(f))
     print(args)
-    with torch.device("cuda"):
-        model = Transformer(args)
 
-    tokenizer = AutoTokenizer.from_pretrained(ckpt_path)
-    load_model(model, os.path.join(ckpt_path, f"model{rank}-mp{world_size}.safetensors"))
+    # load to CPU and later quant on the fly to device
+    if quantize:
+        with torch.device("cpu"):
+            model = Transformer(args)
+
+        load_model(model, os.path.join(ckpt_path, f"model{rank}-mp{world_size}.safetensors"))
+
+        # quantize and pass to device
+        quant_config = BaseQuantizeConfig(nbits=4, group_size=128, axis=1)
+        model = AutoHQQHFModel.quantize_model(
+            model,
+            quant_config=quant_config,
+            compute_dtype=torch.bfloat16,
+            device=ocal_device,
+            skip_layer_pattern=None  # TODO: skip MoE gate layer
+        )
+
+        prepare_for_inference(model, backend="torchao_int4") 
+        # NOTE: torchao/gemlite backends are only fast for bs=1 (GEMV shape)
+        # for batched inference (not used in eval here), need to adopt MARLIN backend
+    else:
+        with torch.device(device):
+            model = Transformer(args)
 
     report_memory(local_rank)
     
@@ -128,6 +166,7 @@ if __name__ == "__main__":
     parser.add_argument("--ckpt-path", type=str, required=True)
     parser.add_argument("--config", type=str, required=True)
     parser.add_argument('--tasks', nargs='+', type=str, default=["mmlu"], help='usage: --tasks task1 task2')
-    args = parser.parse_args()
+    parser.add_argument("--quantize", action="store_true", default=False)
+    args = parser.parse_args(args)
 
-    main(args.ckpt_path, args.config, args.tasks)
+    main(args)
