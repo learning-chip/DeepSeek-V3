@@ -1,4 +1,8 @@
 """
+Dependency
+    pip install transformers lm_eval==0.4.9.0 hqq==0.2.7.post1
+    # 0.4.9.1 has API changes: https://github.com/EleutherAI/lm-evaluation-harness/releases
+
 Usage
     WEIGHT_DIR=/workspace/model_weights/  # server-specific
 
@@ -15,7 +19,7 @@ Usage
     python eval_demo.py --ckpt-path $MODEL_PATH_TP1 --config $MODEL_CONFIG \
         --tasks mmlu | tee dsv2_minimumeval_mmlu_TP1.log
 
-# debug Tensor parallel
+Multi-device runs (if get error, check standalone dist.all_reduce on the GPU server)
 
     MODEL_PATH_TP2=$WEIGHT_DIR/DeepSeek-V2-Lite-Chat_TP2
     MODEL_CONFIG=configs/config_16B.json
