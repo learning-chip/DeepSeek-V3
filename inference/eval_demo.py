@@ -38,9 +38,10 @@ Multi-device runs (if get error, check standalone dist.all_reduce on the GPU ser
         --tasks mmlu_high_school_computer_science mmlu_college_biology \
         | tee dsv2_minimumeval_mmlusubset_TP2.log
 
+    # quantize eval
     torchrun --standalone --nnodes 1 --nproc-per-node 2 \
         eval_demo.py --ckpt-path $MODEL_PATH_TP2 --config $MODEL_CONFIG \
-        --tasks mmlu_high_school_computer_science mmlu_college_biology \
+        --tasks mmlu_high_school_computer_science \
         --quantize | tee dsv2_minimumeval_mmlusubset_TP2_hqqw4a16.log
 
 Weight preprocessing same as original generate.py
@@ -93,10 +94,16 @@ def main(args):
     quantize = args.quantize
 
     if quantize:
-        # TODO: use nanohqq for NPU backend
-        from hqq.models.hf.base import AutoHQQHFModel
-        from nanohqq.hqqlinear import BaseQuantizeConfig
+        from model import Linear
+        import hqq.models.base as hqq_base
+        hqq_base._QUANT_LAYERS.append(Linear)  # let HQQ recognize custom Linear class
+        print("_QUANT_LAYERS:", hqq_base._QUANT_LAYERS)
+
+        from hqq.models.hf.base import AutoHQQHFModel  # also works for non-HF torch module
+        from hqq.core.quantize import BaseQuantizeConfig
         from hqq.utils.patching import prepare_for_inference
+
+        # TODO: use nanohqq for NPU backend
 
     # Configure for TP (`torchrun``), also works for TP=1 with simple `python` launch
     world_size = int(os.getenv("WORLD_SIZE", "1"))
@@ -116,29 +123,36 @@ def main(args):
         args = ModelArgs(**json.load(f))
     print(args)
 
-    # load to CPU and later quant on the fly to device
     if quantize:
-        with torch.device("cpu"):
+        # NOTE: can also load to CPU and later quant on the fly to device, to reduce peak memory
+        # but weight initialization on CPU is very slow
+        with torch.device("cuda"):
             model = Transformer(args)
 
         load_model(model, os.path.join(ckpt_path, f"model{rank}-mp{world_size}.safetensors"))
 
         # quantize and pass to device
-        quant_config = BaseQuantizeConfig(nbits=4, group_size=128, axis=1)
+        quant_config = BaseQuantizeConfig(nbits=4, group_size=64, axis=1)
         model = AutoHQQHFModel.quantize_model(
             model,
             quant_config=quant_config,
             compute_dtype=torch.bfloat16,
-            device=ocal_device,
-            skip_layer_pattern=None  # TODO: skip MoE gate layer
+            device="cuda",
+            # skip_layer_pattern=None  # TODO: skip MoE gate layer
         )
 
-        prepare_for_inference(model, backend="torchao_int4") 
-        # NOTE: torchao/gemlite backends are only fast for bs=1 (GEMV shape)
-        # for batched inference (not used in eval here), need to adopt MARLIN backend
+        fast_backend = True
+        if fast_backend:
+            model.device = "cuda"
+            model.dtype = torch.bfloat16
+            prepare_for_inference(model, backend="torchao_int4") 
+            # NOTE: torchao/gemlite backends are only fast for bs=1 (GEMV shape)
+            # for batched inference (not used in eval here), need to adopt MARLIN backend
     else:
-        with torch.device(device):
+        with torch.device("cuda"):
             model = Transformer(args)
+
+        load_model(model, os.path.join(ckpt_path, f"model{rank}-mp{world_size}.safetensors"))
 
     report_memory(local_rank)
     
