@@ -167,6 +167,6 @@ if __name__ == "__main__":
     parser.add_argument("--config", type=str, required=True)
     parser.add_argument('--tasks', nargs='+', type=str, default=["mmlu"], help='usage: --tasks task1 task2')
     parser.add_argument("--quantize", action="store_true", default=False)
-    args = parser.parse_args(args)
+    args = parser.parse_args()
 
     main(args)
