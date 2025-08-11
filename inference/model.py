@@ -7,8 +7,6 @@ from torch import nn
 import torch.nn.functional as F
 import torch.distributed as dist
 
-from kernel import act_quant, weight_dequant, fp8_gemm
-
 
 world_size = 1
 rank = 0
@@ -126,42 +124,11 @@ class ParallelEmbedding(nn.Module):
         return y
 
 
-def linear(x: torch.Tensor, weight: torch.Tensor, bias: Optional[torch.Tensor] = None) -> torch.Tensor:
-    """
-    Applies a linear transformation to the incoming data: y = xA^T + b.
-    This function supports specialized implementations based on quantization
-    and tensor formats.
-
-    Args:
-        x (torch.Tensor): The input tensor.
-        weight (torch.Tensor): The weight tensor. It may be quantized and 
-            requires dequantization for certain cases.
-        bias (Optional[torch.Tensor]): The bias tensor to be added. Default is None.
-
-    Returns:
-        torch.Tensor: The result of the linear transformation, which may involve 
-        quantization-aware computations depending on the input parameters.
-
-    Notes:
-        - If `weight` is quantized (e.g., `element_size() == 1`), a dequantized version 
-          is used for computation.
-        - If `gemm_impl == "bf16"`, dequantization and a `bf16` GEMM operation are applied.
-        - For other cases, the function applies quantization to `x` and uses `fp8_gemm` for computation.
-    """
-    if weight.element_size() > 1:
-        return F.linear(x, weight, bias)
-    elif gemm_impl == "bf16":
-        weight = weight_dequant(weight, weight.scale)
-        return F.linear(x, weight, bias)
-    else:
-        x, scale = act_quant(x, block_size)
-        y = fp8_gemm(x, scale, weight, weight.scale)
-        if bias is not None:
-            y += bias
-        return y
-
-
-class Linear(nn.Module):
+# NOTE: without FP8 matmul, can just use built-in nn.Linear class
+# This also allows HQQ patching to work out-of-box
+# NOTE: to directly use nn.Linear without custom class inheritance, need to
+#       modify `state_dicts()` in `convert.py`, so `load_model` can work correctly
+class Linear(nn.Linear):
     """
     Custom linear layer with support for quantized weights and optional bias.
 
@@ -174,32 +141,9 @@ class Linear(nn.Module):
     dtype = torch.bfloat16
 
     def __init__(self, in_features: int, out_features: int, bias: bool = False, dtype = None):
-        super().__init__()
-        self.in_features = in_features
-        self.out_features = out_features
-        self.weight = nn.Parameter(torch.empty(out_features, in_features, dtype=dtype or Linear.dtype))
-        if self.weight.element_size() == 1:
-            scale_out_features = (out_features + block_size - 1) // block_size
-            scale_in_features = (in_features + block_size - 1) // block_size
-            self.weight.scale = self.scale = nn.Parameter(torch.empty(scale_out_features, scale_in_features, dtype=torch.float32))
-        else:
-            self.register_parameter("scale", None)
-        if bias:
-            self.bias = nn.Parameter(torch.empty(out_features))
-        else:
-            self.register_parameter("bias", None)
+        super().__init__(in_features, out_features, bias=bias, dtype=dtype)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass for the custom linear layer.
-
-        Args:
-            x (torch.Tensor): Input tensor.
-
-        Returns:
-            torch.Tensor: Transformed tensor after linear computation.
-        """
-        return linear(x, self.weight, self.bias)
+    # use default nn.Linear.forward, no need to overwrite
 
 
 class ColumnParallelLinear(Linear):
@@ -215,7 +159,7 @@ class ColumnParallelLinear(Linear):
     def __init__(self, in_features: int, out_features: int, bias: bool = False, dtype = None):
         assert out_features % world_size == 0, f"Output features must be divisible by world size (world_size={world_size})"
         self.part_out_features = out_features // world_size
-        super().__init__(in_features, self.part_out_features, bias, dtype)
+        super().__init__(in_features, self.part_out_features, bias=bias, dtype=dtype)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -227,7 +171,7 @@ class ColumnParallelLinear(Linear):
         Returns:
             torch.Tensor: Transformed tensor with column-parallel computation.
         """
-        y = linear(x, self.weight, self.bias)
+        y = F.linear(x, self.weight, self.bias)
         return y
 
 
@@ -244,7 +188,7 @@ class RowParallelLinear(Linear):
     def __init__(self, in_features: int, out_features: int, bias: bool = False, dtype = None):
         assert in_features % world_size == 0, f"Input features must be divisible by world size (world_size={world_size})"
         self.part_in_features = in_features // world_size
-        super().__init__(self.part_in_features, out_features, bias, dtype)
+        super().__init__(self.part_in_features, out_features, bias=bias, dtype=dtype)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -256,7 +200,7 @@ class RowParallelLinear(Linear):
         Returns:
             torch.Tensor: Transformed tensor with row-parallel computation.
         """
-        y = linear(x, self.weight)
+        y = F.linear(x, self.weight)
         if world_size > 1:
             dist.all_reduce(y)
         if self.bias is not None:
@@ -475,7 +419,7 @@ class MLA(nn.Module):
             self.v_cache[:bsz, start_pos:end_pos] = v
             scores = torch.einsum("bshd,bthd->bsht", q, self.k_cache[:bsz, :end_pos]) * self.softmax_scale
         else:
-            wkv_b = self.wkv_b.weight if self.wkv_b.scale is None else weight_dequant(self.wkv_b.weight, self.wkv_b.scale, block_size) 
+            wkv_b = self.wkv_b.weight
             wkv_b = wkv_b.view(self.n_local_heads, -1, self.kv_lora_rank)
             q_nope = torch.einsum("bshd,hdc->bshc", q_nope, wkv_b[:, :self.qk_nope_head_dim])
             self.kv_cache[:bsz, start_pos:end_pos] = self.kv_norm(kv)
@@ -570,7 +514,7 @@ class Gate(nn.Module):
         Returns:
             Tuple[torch.Tensor, torch.Tensor]: Routing weights and selected expert indices.
         """
-        scores = linear(x, self.weight)
+        scores = F.linear(x, self.weight)
         if self.score_func == "softmax":
             scores = scores.softmax(dim=-1, dtype=torch.float32)
         else:
@@ -754,7 +698,7 @@ class Transformer(nn.Module):
         global world_size, rank
         world_size = dist.get_world_size() if dist.is_initialized() else 1
         rank = dist.get_rank() if dist.is_initialized() else 0
-        Linear.dtype = torch.float8_e4m3fn if args.dtype == "fp8" else torch.bfloat16
+        Linear.dtype = torch.bfloat16
         super().__init__()
         self.max_seq_len = args.max_seq_len
         self.embed = ParallelEmbedding(args.vocab_size, args.dim)
