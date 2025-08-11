@@ -132,9 +132,9 @@ def main(args):
     print(model_args)
 
     if quantize:
-        # NOTE: can also load to CPU and later quant on the fly to device, to reduce peak memory
-        # but weight initialization on CPU is very slow
-        with torch.device("cuda"):
+        # NOTE: load to CPU and later quant on the fly to device, to reduce peak memory
+        # WARNING: weight initialization on CPU is slower than directly on device!
+        with torch.device("cpu"):
             model = Transformer(model_args)
 
         load_model(model, os.path.join(ckpt_path, f"model{rank}-mp{world_size}.safetensors"))
@@ -148,6 +148,8 @@ def main(args):
             device="cuda",
             # skip_layer_pattern=None  # TODO: skip MoE gate layer
         )
+
+        model.to("cuda")  # move rest of parameters like kv cache to device
 
         fast_backend = True
         if fast_backend:
