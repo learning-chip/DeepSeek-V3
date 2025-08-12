@@ -134,7 +134,7 @@ def main(args):
     torch.set_num_threads(8)
     torch.manual_seed(965)
 
-    tokenizer = AutoTokenizer.from_pretrained(ckpt_path, add_eos_token=True)
+    tokenizer = AutoTokenizer.from_pretrained(ckpt_path)
 
     with open(config) as f:
         model_args = ModelArgs(**json.load(f))

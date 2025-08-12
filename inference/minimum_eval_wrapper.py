@@ -39,7 +39,7 @@ class MinimumEvalWrapper(TemplateLM):
 
     @property
     def eot_token_id(self):
-        return self._tokenizer.eos_token_id
+        return self._tokenizer.eos_id()
 
     @property
     def max_length(self):
@@ -180,11 +180,11 @@ class MinimumEvalWrapper(TemplateLM):
         return res
 
 
-    # for PPL evals like `wikitext`
-    # taken from https://github.com/EleutherAI/lm-evaluation-harness/blob/v0.4.9/lm_eval/models/huggingface.py#L946
-    # Also see discussion for different perplexity calculation:
-    # https://github.com/EleutherAI/lm-evaluation-harness/issues/2170
-    # https://github.com/EleutherAI/lm-evaluation-harness/issues/1471
+    # # for PPL evals like `wikitext`
+    # # taken from https://github.com/EleutherAI/lm-evaluation-harness/blob/v0.4.9/lm_eval/models/huggingface.py#L946
+    # # Also see discussion for different perplexity calculation:
+    # # https://github.com/EleutherAI/lm-evaluation-harness/issues/2170
+    # # https://github.com/EleutherAI/lm-evaluation-harness/issues/1471
     def loglikelihood_rolling(
         self, requests: List[Instance], disable_tqdm: bool = False
     ) -> List[float]:
@@ -203,7 +203,7 @@ class MinimumEvalWrapper(TemplateLM):
                     utils.make_disjoint_window,
                     utils.get_rolling_token_windows(
                         token_list=self.tok_encode(string),
-                        prefix_token=self.prefix_token_id,
+                        prefix_token=self._tokenizer.eos_token_id,  # TODO: correct?
                         max_seq_len=self.max_length,
                         context_len=1,
                     ),
@@ -218,7 +218,7 @@ class MinimumEvalWrapper(TemplateLM):
             request_window_counts.append(len(windows))
 
         all_nlls = []
-        batch_size = 1
+        batch_size = 1  # WARNING: force bs=1 here
         for i in range(0, len(all_windows), batch_size):
             batch = all_windows[i : i + batch_size]
             # Extract just the windows for processing, keeping track of request indices
