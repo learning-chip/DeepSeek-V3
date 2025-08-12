@@ -6,6 +6,9 @@ Usage
 
     python hf_lm_eval.py --tasks wikitext | tee dsv2_hfref_eval_wikitext.log
     python hf_lm_eval.py --tasks mmlu | tee dsv2_hfref_eval_mmlu.log
+
+Limitation:
+    No robust way to use TP/EP, better use manual (non-HF) model.py to scale to multiple devices.
 """
 
 from timeit import default_timer as timer
@@ -26,12 +29,12 @@ from transformers.models.deepseek_v2.modeling_deepseek_v2 import DeepseekV2ForCa
 def main(args):
     print("args: ", args)
     model_path = args.model_path
-
-    torch.cuda.set_device(args.device)
+    device = args.device
+    torch.cuda.set_device(device)
 
     model = DeepseekV2ForCausalLM.from_pretrained(
             model_path, torch_dtype=torch.bfloat16
-        )
+        ).to(device)
 
     tokenizer = AutoTokenizer.from_pretrained(model_path)
     model = HFLM(
