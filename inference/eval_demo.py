@@ -23,6 +23,9 @@ Usage
     python eval_demo.py --ckpt-path $MODEL_PATH_TP1 --config $MODEL_CONFIG \
             --tasks wikitext | tee dsv2_minimumeval_wikitext_TP1.log
 
+    python eval_demo.py --ckpt-path $MODEL_PATH_TP1 --config $MODEL_CONFIG \
+            --tasks pile_10k | tee dsv2_minimumeval_pile10k_TP1.log
+
     # quantize eval
     python eval_demo.py --ckpt-path $MODEL_PATH_TP1 --config $MODEL_CONFIG \
         --tasks mmlu_high_school_computer_science mmlu_college_biology \
@@ -129,7 +132,7 @@ def main(args):
     if world_size > 1:
         dist.init_process_group("nccl")
 
-    torch.cuda.set_device(local_rank)
+    torch.cuda.set_device(local_rank + args.device_id_shift)  # test on next devices
     torch.set_default_dtype(torch.bfloat16)
     torch.set_num_threads(8)
     torch.manual_seed(965)
@@ -204,6 +207,7 @@ if __name__ == "__main__":
     parser.add_argument("--config", type=str, required=True)
     parser.add_argument('--tasks', nargs='+', type=str, default=["mmlu"], help='usage: --tasks task1 task2')
     parser.add_argument("--quantize", action="store_true", default=False)
+    parser.add_argument("--device_id_shift", type=int, default=0)
     args = parser.parse_args()
 
     main(args)
