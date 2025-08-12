@@ -19,6 +19,10 @@ Usage
     python eval_demo.py --ckpt-path $MODEL_PATH_TP1 --config $MODEL_CONFIG \
         --tasks mmlu | tee dsv2_minimumeval_mmlu_TP1.log
 
+    # PPL metric
+    python eval_demo.py --ckpt-path $MODEL_PATH_TP1 --config $MODEL_CONFIG \
+            --tasks wikitext | tee dsv2_minimumeval_wikitext_TP1.log
+
     # quantize eval
     python eval_demo.py --ckpt-path $MODEL_PATH_TP1 --config $MODEL_CONFIG \
         --tasks mmlu_high_school_computer_science mmlu_college_biology \
@@ -27,6 +31,10 @@ Usage
     python eval_demo.py --ckpt-path $MODEL_PATH_TP1 --config $MODEL_CONFIG \
         --tasks mmlu \
         --quantize | tee dsv2_minimumeval_mmlu_TP1_hqqw4a16.log
+
+    python eval_demo.py --ckpt-path $MODEL_PATH_TP1 --config $MODEL_CONFIG \
+        --tasks wikitext \
+        --quantize | tee dsv2_minimumeval_wikitext_TP1_hqqw4a16.log
 
 Multi-device runs (if get error, check standalone dist.all_reduce on the GPU server)
 
@@ -126,7 +134,7 @@ def main(args):
     torch.set_num_threads(8)
     torch.manual_seed(965)
 
-    tokenizer = AutoTokenizer.from_pretrained(ckpt_path)
+    tokenizer = AutoTokenizer.from_pretrained(ckpt_path, add_eos_token=True)
 
     with open(config) as f:
         model_args = ModelArgs(**json.load(f))
