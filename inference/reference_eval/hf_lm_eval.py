@@ -1,6 +1,6 @@
 """
 Dependency
-    pip install transformers==4.55.0
+    pip install transformers==4.55.0 lm_eval==0.4.9.0
 
 Usage
 
@@ -19,6 +19,9 @@ from lm_eval.models.huggingface import HFLM
 
 from transformers import AutoTokenizer
 from transformers.models.deepseek_v2.modeling_deepseek_v2 import DeepseekV2ForCausalLM
+# built-in DS model added since transformers==4.54.0
+# https://github.com/huggingface/transformers/blob/v4.55.0/src/transformers/models/deepseek_v2/modeling_deepseek_v2.py
+
 
 def main(args):
     print("args: ", args)
