@@ -4,11 +4,17 @@ Dependency
 
 Usage
 
-    python hf_lm_eval.py --tasks wikitext | tee dsv2_hfref_eval_wikitext.log
+    # multiple choice
     python hf_lm_eval.py --tasks mmlu | tee dsv2_hfref_eval_mmlu.log
 
+    # PPL
+    python hf_lm_eval.py --tasks wikitext | tee dsv2_hfref_eval_wikitext.log
+    python hf_lm_eval.py --tasks pile_10k | tee dsv2_hfref_eval_pile10k.log
+    python hf_lm_eval.py --tasks pile_arxiv | tee dsv2_hfref_eval_arxiv.log
+    # NOTE: full `pile` or `c4` datasets are hundreds of GBs, here only look at small subsets
+
 Limitation:
-    No robust way to use TP/EP, better use manual (non-HF) model.py to scale to multiple devices.
+    No robust way to use TP/EP with HF DS, better use manual (non-HF) model.py to scale to multiple devices.
 """
 
 from timeit import default_timer as timer
@@ -41,6 +47,7 @@ def main(args):
         pretrained=model,
         tokenizer=tokenizer
     )
+    # TODO: can add quantization here
 
     start_time = timer()
     results = evaluator.simple_evaluate(
