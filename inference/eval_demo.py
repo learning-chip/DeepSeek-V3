@@ -39,6 +39,10 @@ Usage
         --tasks wikitext \
         --quantize | tee dsv2_minimumeval_wikitext_TP1_hqqw4a16.log
 
+    python eval_demo.py --ckpt-path $MODEL_PATH_TP1 --config $MODEL_CONFIG \
+        --tasks pile_10k \
+        --quantize | tee dsv2_minimumeval_pile10k_TP1_hqqw4a16.log
+
 Multi-device runs (if get error, check standalone dist.all_reduce on the GPU server)
 
     MODEL_PATH_TP2=$WEIGHT_DIR/DeepSeek-V2-Lite-Chat_TP2
@@ -63,6 +67,11 @@ Multi-device runs (if get error, check standalone dist.all_reduce on the GPU ser
             eval_demo.py --ckpt-path $MODEL_PATH_TP2 --config $MODEL_CONFIG \
             --tasks mmlu \
             --quantize | tee dsv2_minimumeval_mmlu_TP2_hqqw4a16.log
+
+    torchrun --standalone --nnodes 1 --nproc-per-node 2 \
+            eval_demo.py --ckpt-path $MODEL_PATH_TP2 --config $MODEL_CONFIG \
+            --tasks wikitext \
+            --quantize | tee dsv2_minimumeval_wikitext_TP2_hqqw4a16.log
 
 Weight preprocessing same as original generate.py
 
