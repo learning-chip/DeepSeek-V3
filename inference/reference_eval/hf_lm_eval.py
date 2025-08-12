@@ -1,4 +1,7 @@
 """
+Dependency
+    pip install transformers==4.55.0
+
 Usage
 
     python hf_lm_eval.py --tasks wikitext | tee dsv2_hfref_eval_wikitext.log
@@ -15,7 +18,7 @@ from lm_eval.utils import make_table
 from lm_eval.models.huggingface import HFLM
 
 from transformers import AutoTokenizer
-from hf_deepseek import DeepseekV2ForCausalLM
+from transformers.models.deepseek_v2.modeling_deepseek_v2 import DeepseekV2ForCausalLM
 
 def main(args):
     print("args: ", args)
