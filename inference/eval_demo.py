@@ -45,8 +45,13 @@ Multi-device runs (if get error, check standalone dist.all_reduce on the GPU ser
     # quantize eval
     torchrun --standalone --nnodes 1 --nproc-per-node 2 \
         eval_demo.py --ckpt-path $MODEL_PATH_TP2 --config $MODEL_CONFIG \
-        --tasks mmlu_high_school_computer_science \
+        --tasks mmlu_high_school_computer_science mmlu_college_biology \
         --quantize | tee dsv2_minimumeval_mmlusubset_TP2_hqqw4a16.log
+
+    torchrun --standalone --nnodes 1 --nproc-per-node 2 \
+            eval_demo.py --ckpt-path $MODEL_PATH_TP2 --config $MODEL_CONFIG \
+            --tasks mmlu \
+            --quantize | tee dsv2_minimumeval_mmlu_TP2_hqqw4a16.log
 
 Weight preprocessing same as original generate.py
 
